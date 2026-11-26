@@ -1,0 +1,4 @@
+# Build output from running main.ts locally (MAKEFUN_OUTPUT_DIR=out) — never
+# committed; the grader rebuilds the entry itself from app/ and screenshots/.
+out/
+out2/
