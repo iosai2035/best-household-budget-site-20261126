@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="Hearth & Ledger — a household budget that runs entirely in your browser. Income in, every dollar given a job, savings moved first.">
+<title>Hearth &amp; Ledger — Household Budget</title>
+<script>try{var t=localStorage.getItem('hearth-ledger-theme');if(t==='dark'||t==='light'){document.documentElement.setAttribute('data-theme',t);}}catch(e){}</script>
+<link rel="stylesheet" href="style.css">
+<script type="module" src="main.js"></script>
+</head>
+<body>
+<a class="skip-link" href="#app">Skip to main content</a>
+<header>
+  <a class="brand" href="#/">Hearth &amp; Ledger</a>
+  <nav aria-label="Sections">
+    <a href="#/">Dashboard</a>
+    <a href="#/budget">Budget</a>
+    <a href="#/transactions">Transactions</a>
+    <a href="#/goals">Goals</a>
+    <a href="#/planner">Planner</a>
+    <a href="#/guide">Guide</a>
+  </nav>
+  <button type="button" id="theme-toggle" aria-pressed="false">Dark mode</button>
+</header>
+<main id="app"></main>
+<footer>
+  <p>Hearth &amp; Ledger runs entirely in your browser — no account, no network, no data leaves this device. Your edits are saved in this browser only.</p>
+  <p><button class="link-button" data-action="reset-demo" type="button">Reset the demo data</button> · Sample data for the Alvarez household, November 2026.</p>
+</footer>
+</body>
+</html>
