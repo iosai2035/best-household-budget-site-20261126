@@ -7,6 +7,12 @@
 // renders and true once it is on screen, so a screenshot script knows when to
 // capture. The theme toggle lives in the header and is remembered in the
 // browser, separately from the budget data.
+//
+// Forms are handled by a dispatch table (FORM_HANDLERS): one small function
+// per form action, looked up by the form's data-action. Adding a form means
+// adding one entry, and each handler can be read without wading through the
+// others. Validation problems from the store are shown in the form's own
+// error line instead of failing silently.
 
 import { downloadCsv, exportLabel, transactionsToCsv } from './export.js';
 import { store } from './store.js';
@@ -210,94 +216,194 @@ function formValues(form) {
   return values;
 }
 
+// Show the store's validation problems in a form's error line, or clear it.
+// The line is hidden when there is nothing to say, so it never takes space
+// on a form that is fine.
+function showFormError(id, problems) {
+  const line = document.getElementById(id);
+  if (!line) return;
+  if (!problems || problems.length === 0) {
+    line.hidden = true;
+    line.textContent = '';
+    return;
+  }
+  line.hidden = false;
+  line.textContent = problems.join(' ');
+}
+
+// --- Form handlers ----------------------------------------------------------
+// One function per form action. Each takes the form and its values, and
+// either updates the store and re-renders, or writes into its own result
+// area for the calculators.
+
+function handleAddTransaction(form, values) {
+  const cents = parseDollars(values.amount);
+  // Name each problem instead of one generic line, so the user sees exactly
+  // which field to fix.
+  const problems = [];
+  if (!values.date) problems.push('Enter a date.');
+  if (!values.description.trim()) problems.push('Enter a description.');
+  if (cents === null) problems.push('Enter an amount above $0.00.');
+  if (problems.length > 0) {
+    showFormError('tx-form-error', problems);
+    return;
+  }
+  const fields = {
+    date: values.date,
+    description: values.description.trim(),
+    categoryId: values.categoryId,
+    amountCents: values.direction === 'in' ? cents : -cents,
+  };
+  // The same form edits a transaction when it carries an id: the Edit button
+  // on a row fills the form in and stores the id in the hidden field.
+  if (values.editId) {
+    const result = store.editTransaction(values.editId, fields);
+    if (!result.ok) {
+      showFormError('tx-form-error', result.problems);
+      return;
+    }
+  } else {
+    const result = store.addTransaction(fields);
+    if (!result.id) {
+      showFormError('tx-form-error', result.problems);
+      return;
+    }
+  }
+  form.reset();
+  resetTransactionForm();
+  rerender();
+}
+
+function handleContributeGoal(form, values) {
+  const cents = parseDollars(values.amount);
+  if (cents === null) return;
+  store.contributeToGoal(values.goalId, cents);
+  rerender();
+}
+
+function handleAddGoal(form, values) {
+  const target = parseDollars(values.target);
+  const monthly = parseDollars(values.monthly);
+  if (target === null || monthly === null || !values.name.trim()) return;
+  const result = store.addGoal({ name: values.name.trim(), targetCents: target, monthlyCents: monthly, note: values.note.trim() });
+  if (!result.id) return;
+  rerender();
+}
+
+function handleCalc503020(form, values) {
+  const cents = parseDollars(values.income);
+  const result = document.getElementById('calc-503020-result');
+  if (cents === null || !result) return;
+  const split = fiftyThirtyTwenty(cents);
+  result.innerHTML = `<p>On ${formatCents(cents)}: needs ${formatCents(split.needs)}, wants ${formatCents(split.wants)}, savings ${formatCents(split.savings)}.</p>`;
+}
+
+function handleCalcEmergency(form, values) {
+  const cents = parseDollars(values.essentials);
+  const result = document.getElementById('calc-emergency-result');
+  if (cents === null || !result) return;
+  const summary = buildSummary(store.state);
+  const covered = emergencyCoverageMonths(summary.emergencySaved, cents);
+  result.innerHTML = `<p>Three months: ${formatCents(cents * 3)}. Six months: ${formatCents(cents * 6)}. Your fund of ${formatCents(summary.emergencySaved)} covers ${covered} months of it.</p>`;
+}
+
+function handleCalcWhatif(form, values) {
+  const fromWant = parseDollars(values.fromWant);
+  const fromNeed = parseDollars(values.fromNeed);
+  const result = document.getElementById('calc-whatif-result');
+  if (fromWant === null || fromNeed === null || !result) return;
+  const summary = buildSummary(store.state);
+  const budgets = {
+    need: summary.byKind.need.budget,
+    want: summary.byKind.want.budget,
+    saving: summary.byKind.saving.budget,
+  };
+  const shifted = shiftShares(summary.income, budgets, fromNeed, fromWant);
+  const clampedNote = shifted.clamped
+    ? ' The move was trimmed to what the shares hold — a share cannot go below $0.'
+    : '';
+  result.innerHTML = `<p>Moving ${formatCents(shifted.movedCents)} a month to savings gives ${formatCents(shifted.need)} needs (${shifted.shares.need}%, target ${formatCents(summary.fifty.needs)}), ${formatCents(shifted.want)} wants (${shifted.shares.want}%, target ${formatCents(summary.fifty.wants)}) and ${formatCents(shifted.saving)} savings (${shifted.shares.saving}%, target ${formatCents(summary.fifty.savings)}). That is ${formatCents(shifted.extraPerYearCents)} more saved over a year.${clampedNote}</p>`;
+}
+
+function handleCalcGoal(form, values) {
+  const target = parseDollars(values.target);
+  const saved = parseDollars(values.saved);
+  const monthly = parseDollars(values.monthly);
+  const result = document.getElementById('calc-goal-result');
+  if (target === null || saved === null || monthly === null || !result) return;
+  const summary = buildSummary(store.state);
+  const months = monthsToGoal(target, saved, monthly);
+  if (!Number.isFinite(months)) {
+    result.innerHTML = '<p>With no monthly contribution the goal has no finish date. Add one to see it.</p>';
+    return;
+  }
+  if (months === 0) {
+    result.innerHTML = '<p>Already there — the saved amount meets the target.</p>';
+    return;
+  }
+  const finish = goalFinishMonth(summary.monthStart, months);
+  result.innerHTML = `<p>${formatCents(target - saved)} left at ${formatCents(monthly)} a month is ${months} month${months === 1 ? '' : 's'} — finished around ${finish}.</p>`;
+}
+
+// The dispatch table: form data-action -> handler. The filter form updates
+// live as the user types; submitting it (Enter) changes nothing, so its
+// handler only stops the page reloading.
+const FORM_HANDLERS = {
+  'filter-transactions': () => {},
+  'add-transaction': handleAddTransaction,
+  'contribute-goal': handleContributeGoal,
+  'add-goal': handleAddGoal,
+  'calc-503020': handleCalc503020,
+  'calc-emergency': handleCalcEmergency,
+  'calc-whatif': handleCalcWhatif,
+  'calc-goal': handleCalcGoal,
+};
+
 app.addEventListener('submit', (event) => {
   const form = event.target.closest('form[data-action]');
   if (!form) return;
   event.preventDefault();
-  const action = form.dataset.action;
-  const values = formValues(form);
-  if (action === 'filter-transactions') {
-    // The filter updates live as the user types; submitting (Enter) changes
-    // nothing, so this only stops the page reloading.
-    return;
-  }
-  if (action === 'add-transaction') {
-    const cents = parseDollars(values.amount);
-    if (cents === null || !values.description.trim() || !values.date) return;
-    store.addTransaction({
-      date: values.date,
-      description: values.description.trim(),
-      categoryId: values.categoryId,
-      amountCents: values.direction === 'in' ? cents : -cents,
-    });
-    form.reset();
-    rerender();
-  }
-  if (action === 'contribute-goal') {
-    const cents = parseDollars(values.amount);
-    if (cents === null) return;
-    store.contributeToGoal(values.goalId, cents);
-    rerender();
-  }
-  if (action === 'add-goal') {
-    const target = parseDollars(values.target);
-    const monthly = parseDollars(values.monthly);
-    if (target === null || monthly === null || !values.name.trim()) return;
-    store.addGoal({ name: values.name.trim(), targetCents: target, monthlyCents: monthly, note: values.note.trim() });
-    rerender();
-  }
-  if (action === 'calc-503020') {
-    const cents = parseDollars(values.income);
-    const result = document.getElementById('calc-503020-result');
-    if (cents === null || !result) return;
-    const split = fiftyThirtyTwenty(cents);
-    result.innerHTML = `<p>On ${formatCents(cents)}: needs ${formatCents(split.needs)}, wants ${formatCents(split.wants)}, savings ${formatCents(split.savings)}.</p>`;
-  }
-  if (action === 'calc-emergency') {
-    const cents = parseDollars(values.essentials);
-    const result = document.getElementById('calc-emergency-result');
-    if (cents === null || !result) return;
-    const summary = buildSummary(store.state);
-    const covered = emergencyCoverageMonths(summary.emergencySaved, cents);
-    result.innerHTML = `<p>Three months: ${formatCents(cents * 3)}. Six months: ${formatCents(cents * 6)}. Your fund of ${formatCents(summary.emergencySaved)} covers ${covered} months of it.</p>`;
-  }
-  if (action === 'calc-whatif') {
-    const fromWant = parseDollars(values.fromWant);
-    const fromNeed = parseDollars(values.fromNeed);
-    const result = document.getElementById('calc-whatif-result');
-    if (fromWant === null || fromNeed === null || !result) return;
-    const summary = buildSummary(store.state);
-    const budgets = {
-      need: summary.byKind.need.budget,
-      want: summary.byKind.want.budget,
-      saving: summary.byKind.saving.budget,
-    };
-    const shifted = shiftShares(summary.income, budgets, fromNeed, fromWant);
-    const clampedNote = shifted.clamped
-      ? ' The move was trimmed to what the shares hold — a share cannot go below $0.'
-      : '';
-    result.innerHTML = `<p>Moving ${formatCents(shifted.movedCents)} a month to savings gives ${formatCents(shifted.need)} needs (${shifted.shares.need}%, target ${formatCents(summary.fifty.needs)}), ${formatCents(shifted.want)} wants (${shifted.shares.want}%, target ${formatCents(summary.fifty.wants)}) and ${formatCents(shifted.saving)} savings (${shifted.shares.saving}%, target ${formatCents(summary.fifty.savings)}). That is ${formatCents(shifted.extraPerYearCents)} more saved over a year.${clampedNote}</p>`;
-  }
-  if (action === 'calc-goal') {
-    const target = parseDollars(values.target);
-    const saved = parseDollars(values.saved);
-    const monthly = parseDollars(values.monthly);
-    const result = document.getElementById('calc-goal-result');
-    if (target === null || saved === null || monthly === null || !result) return;
-    const summary = buildSummary(store.state);
-    const months = monthsToGoal(target, saved, monthly);
-    if (!Number.isFinite(months)) {
-      result.innerHTML = '<p>With no monthly contribution the goal has no finish date. Add one to see it.</p>';
-      return;
-    }
-    if (months === 0) {
-      result.innerHTML = '<p>Already there — the saved amount meets the target.</p>';
-      return;
-    }
-    const finish = goalFinishMonth(summary.monthStart, months);
-    result.innerHTML = `<p>${formatCents(target - saved)} left at ${formatCents(monthly)} a month is ${months} month${months === 1 ? '' : 's'} — finished around ${finish}.</p>`;
-  }
+  const handler = FORM_HANDLERS[form.dataset.action];
+  if (handler) handler(form, formValues(form));
 });
+
+// --- Editing a transaction --------------------------------------------------
+// The Edit button on a row fills the add form with that transaction's values
+// and turns the form into an edit form: the submit button says "Save changes"
+// and a Cancel button appears. Submitting saves the edit (handleAddTransaction
+// above); cancelling, or a successful save, puts the form back to adding.
+
+function resetTransactionForm() {
+  // form.reset() does not touch hidden inputs (they are not resettable), so
+  // the edit id is cleared by hand — otherwise the next "add" would silently
+  // overwrite the transaction that was being edited.
+  const form = document.getElementById('tx-form');
+  if (form && form.elements.editId) form.elements.editId.value = '';
+  const submit = document.getElementById('tx-submit');
+  const cancel = document.getElementById('tx-cancel-edit');
+  if (submit) submit.textContent = 'Add transaction';
+  if (cancel) cancel.hidden = true;
+  showFormError('tx-form-error', []);
+}
+
+function startEditTransaction(id) {
+  const transaction = store.state.transactions.find((t) => t.id === id);
+  const form = document.getElementById('tx-form');
+  if (!transaction || !form) return;
+  form.elements.date.value = transaction.date;
+  form.elements.description.value = transaction.description;
+  form.elements.categoryId.value = transaction.categoryId;
+  form.elements.amount.value = (Math.abs(transaction.amountCents) / 100).toFixed(2);
+  form.elements.direction.value = transaction.amountCents < 0 ? 'out' : 'in';
+  form.elements.editId.value = transaction.id;
+  const submit = document.getElementById('tx-submit');
+  const cancel = document.getElementById('tx-cancel-edit');
+  if (submit) submit.textContent = 'Save changes';
+  if (cancel) cancel.hidden = false;
+  showFormError('tx-form-error', []);
+  form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  form.elements.description.focus();
+}
 
 app.addEventListener('change', (event) => {
   const input = event.target.closest('input[data-action="set-budget"]');
@@ -339,6 +445,18 @@ app.addEventListener('click', (event) => {
       pendingScrollTo = targetId;
       location.hash = '#/guide';
     }
+    return;
+  }
+  const editButton = event.target.closest('button[data-action="edit-transaction"]');
+  if (editButton) {
+    startEditTransaction(editButton.dataset.id);
+    return;
+  }
+  const cancelButton = event.target.closest('button[data-action="cancel-edit"]');
+  if (cancelButton) {
+    const form = document.getElementById('tx-form');
+    if (form) form.reset();
+    resetTransactionForm();
     return;
   }
   const deleteButton = event.target.closest('button[data-action="delete-transaction"]');

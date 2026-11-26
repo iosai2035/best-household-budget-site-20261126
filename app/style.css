@@ -93,6 +93,12 @@
 
 * { box-sizing: border-box; }
 
+/* The hidden attribute must always win: the .button rule sets
+   display:inline-block, which would otherwise override the browser's own
+   [hidden] rule and show buttons that are meant to be hidden (the Cancel
+   edit button). */
+[hidden] { display: none !important; }
+
 html { -webkit-text-size-adjust: 100%; }
 
 body {
@@ -222,6 +228,21 @@ footer {
   cursor: pointer;
 }
 .button:hover { background: var(--button-hover); }
+/* A quiet second button beside a primary one (Cancel edit), and a row to
+   hold a form's buttons together. */
+.button.secondary { background: transparent; color: var(--link); border: 1px solid var(--line); }
+.button.secondary:hover { background: var(--green-soft); }
+.form-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; margin: 0; }
+.form-error { color: var(--red); font-weight: 600; margin: 0; }
+
+/* Edit and Delete sit side by side in the last column of the transactions
+   table, with a gap between them instead of running together. */
+.tx-actions { white-space: nowrap; }
+.tx-actions .link-button + .link-button { margin-left: 0.8rem; }
+
+/* The figures table inside a guide section: the same table the site uses
+   everywhere, with a little air above it. */
+.guide-table { margin-top: 0.9rem; }
 
 .link-button {
   background: none;
@@ -425,4 +446,9 @@ tr.over td { background: var(--red-soft); }
   .legend { grid-template-columns: 1fr; }
   .card { padding: 0.95rem; }
   .filter-row input[type="search"] { min-width: 0; width: 100%; }
+  /* On a phone the Edit/Delete pair stacks instead of squeezing, and the
+     guide's figures table scrolls sideways like the other tables. */
+  .tx-actions .link-button { display: block; }
+  .tx-actions .link-button + .link-button { margin-left: 0; margin-top: 0.3rem; }
+  .guide-table { display: block; overflow-x: auto; }
 }

@@ -1,10 +1,18 @@
-// Hearth & Ledger — the budgeting guide for repository iosai2035/best-household-budget-site.
+// Hearth & Ledger — the budgeting guide for repository iosai2035/best-household-budget-site-20261126.
 // The methods this site teaches, in the site's own words, checked against the
 // sources they come from: the 50/30/20 rule (Warren & Tyagi, "All Your Worth",
-// 2005), the envelope method, and the four rules of zero-based budgeting
-// (give every dollar a job, embrace your true expenses, roll with the punches,
-// age your money). No invented rules, no made-up figures: every number here is
-// the method's own number.
+// 2005), the envelope method, the four rules of zero-based budgeting (give
+// every dollar a job, embrace your true expenses, roll with the punches, age
+// your money), and the two debt-payoff orders the Consumer Financial
+// Protection Bureau describes (highest interest rate first, smallest balance
+// first). No invented rules, no made-up figures: every number here is the
+// method's own number, or this household's own month — the worked month at
+// the end walks through the November 2026 figures the site itself shows, so
+// the reader can check every line of it against the dashboard.
+//
+// A section is a title, its source, paragraphs of body text, and optionally
+// a small table (headers plus rows of plain text) for figures that read
+// better in columns than in a sentence.
 
 export const GUIDE_SECTIONS = [
   {
@@ -55,5 +63,38 @@ export const GUIDE_SECTIONS = [
       'Move the savings out on payday, before the spending starts: the emergency fund, the goals and any extra debt payment leave the account the day the pay lands. What is left is what the month runs on, and the envelopes cannot accidentally spend the savings.',
       'That is why the budget on this site lists savings as a planned share of income, not as whatever happens to be left at the end of the month. The 20% share of the 50/30/20 rule is the same idea: savings is a bill you pay to your future self, first.',
     ],
+  },
+  {
+    id: 'paying-off-debt',
+    title: 'Paying off debt: highest rate first, or smallest first',
+    source: 'Consumer Financial Protection Bureau, "How to reduce your debt"',
+    body: [
+      'Both methods run the same engine. Keep paying the minimum on every debt, so none of them falls behind. Then take every spare dollar — the extra payment the 50/30/20 rule counts as savings — and aim it at one debt only. When that debt reaches zero, the whole payment you were making on it rolls onto the next debt in line, so the monthly amount you pay never shrinks; it just concentrates.',
+      'The highest-interest-rate method aims the extra at the debt with the highest rate first, because that is the debt costing the most. The Bureau says this method can save money in the long run, and to use it if saving the most is what motivates you. Its cost is patience: when the highest-rate debt is also a large one, the first payoff can take a while to arrive.',
+      'The snowball method aims the extra at the smallest balance first, whatever its rate. The Bureau says you see progress sooner this way — a debt disappears early, which keeps some households going — but you may end up paying more in the long run, because the expensive debts wait their turn. Pick the one you will actually finish: the method you stick with beats the one that looks best on paper. Either way, the extra payment is a planned share of the budget, not whatever is left at the end of the month.',
+    ],
+  },
+  {
+    id: 'worked-month',
+    title: 'A worked month: the Alvarez household, November 2026',
+    source: 'This site’s own sample month — every figure below is on the dashboard',
+    body: [
+      'Payday, November 1: the $3,900 salary lands, and the savings leave the same day — $420 to the emergency fund, $200 to the vacation, $240 to the new car and $260 to retirement, $1,120 in all. Rent ($1,250) and the first half of childcare ($175) go out the same day, so the month starts with its fixed costs and its savings already settled.',
+      'Through the month, the envelopes do the work: six weekly supermarket shops add up to $459.50 of a $480 grocery envelope, fuel and the bus pass to $177.25 of $230 for transport, and the utilities — electricity, water and gas — to $176.55 of $190. The heaviest week is the first, $1,986.03, because rent, childcare and the savings transfers all land in it.',
+      'By November 24 the month reads like this: $4,800 came in and $4,670 of it was planned — $2,865 needs, $685 wants, $1,120 savings — leaving $130 never assigned. Of the plan, $3,124.56 was spent ($2,747.90 needs, $376.66 wants) and the $1,120 was saved, so $555.44 of the income is still unspent. Needs run $465 over the 50% guide, which is what the extra savings are paid for with: wants sit $755 under their 30% target.',
+      'The emergency fund ends the month at $3,200 of its $8,600 target — 37% there, covering 1.1 months of needs, with about 13 months left at $420 a month. Read the month this way and the budget stops being a list of numbers: it is the story of where the pay went, in order.',
+      'One loose end is worth closing: the $130 that was never assigned. Give it to the emergency fund and the monthly contribution becomes $550; the $5,400 still to save then takes 10 months instead of 13. That is the whole method in one move — unassigned money is a job waiting to be given, and the job with the clearest finish date is the one to take it.',
+    ],
+    table: {
+      headers: ['Line', 'Amount'],
+      rows: [
+        ['Income (salary $3,900 + freelance $900)', '$4,800.00'],
+        ['Planned: needs $2,865 + wants $685 + savings $1,120', '$4,670.00'],
+        ['Never assigned', '$130.00'],
+        ['Spent: needs $2,747.90 + wants $376.66', '$3,124.56'],
+        ['Saved', '$1,120.00'],
+        ['Income not yet spent', '$555.44'],
+      ],
+    },
   },
 ];

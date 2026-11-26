@@ -5,6 +5,12 @@
 // cents by money.js, so the figures on screen are the figures in the data.
 // The transactions page also takes the current filter (main.js keeps it), so
 // searching never reloads the page — only the table rows change.
+//
+// The dashboard is built from one small function per card, so each card can
+// be read, tested and changed on its own instead of living inside one long
+// template: statCards for the four figures at the top, spendingCard for the
+// donut, envelopesCard for the low envelopes and the bills, and the two
+// smaller cards for recent transactions and goals.
 
 import { CATEGORY_COLOURS, barChart, donutChart, goalBar, meterBar } from './charts.js';
 import { exportLabel } from './export.js';
@@ -40,6 +46,8 @@ function monthDay(isoDate) {
 
 // One transaction as a table row. Exported so main.js can re-render just the
 // table body when the search box changes, without losing the user's place.
+// Each row carries an Edit button as well as Delete: editing reuses the add
+// form above the table, pre-filled with this row's values.
 export function transactionRow(t, categories) {
   const category = categories.find((c) => c.id === t.categoryId);
   return `<tr>
@@ -47,7 +55,7 @@ export function transactionRow(t, categories) {
       <td>${escapeHtml(t.description)}</td>
       <td>${category ? escapeHtml(category.name) : '—'}</td>
       <td class="num ${t.amountCents < 0 ? 'out' : 'in'}">${t.amountCents < 0 ? '−' : '+'}${formatAbsCents(t.amountCents)}</td>
-      <td><button class="link-button" data-action="delete-transaction" data-id="${t.id}" aria-label="Delete ${escapeHtml(t.description)}">Delete</button></td>
+      <td class="tx-actions"><button class="link-button" data-action="edit-transaction" data-id="${t.id}" aria-label="Edit ${escapeHtml(t.description)}">Edit</button><button class="link-button" data-action="delete-transaction" data-id="${t.id}" aria-label="Delete ${escapeHtml(t.description)}">Delete</button></td>
     </tr>`;
 }
 
@@ -64,7 +72,24 @@ export function filterTransactions(transactions, filter) {
   });
 }
 
-export function dashboardView(state, s) {
+// --- Dashboard cards --------------------------------------------------------
+
+// The four figures at the top: income, spent, saved, and what is still
+// unassigned. The Spent card splits into its two sub-lines (needs, wants)
+// so the split is visible without opening the budget page.
+function statCards(s) {
+  return `<section class="cards" aria-label="This month at a glance">
+    <article class="card stat"><h2>Income</h2><p class="big">${formatCents(s.income)}</p><p class="sub">After tax, this month</p></article>
+    <article class="card stat"><h2>Spent</h2><p class="big">${formatAbsCents(s.spentTotal)}</p><p class="sub"><span class="sub-line">Needs ${formatAbsCents(s.spentNeeds)}</span><span class="sub-line">Wants ${formatAbsCents(s.spentWants)}</span></p></article>
+    <article class="card stat"><h2>Saved</h2><p class="big">${formatAbsCents(s.saved)}</p><p class="sub">${formatAbsCents(s.saved)} moved to savings</p></article>
+    <article class="card stat highlight"><h2>Ready to assign</h2><p class="big">${formatCents(s.unassigned)}</p><p class="sub">${s.unassigned > 0 ? 'Give every dollar a job — see the budget' : 'Every dollar has a job'}</p><p><a class="button" href="#/budget">Open the budget</a></p></article>
+  </section>`;
+}
+
+// The donut of spending by category, needs and wants only — savings
+// transfers are not spending. The legend sits under the donut in three
+// columns, so the whole chart fits above the fold.
+function spendingCard(s) {
   const slices = s.byCategory
     .filter((row) => row.category.kind !== 'saving' && row.spent > 0)
     .map((row) => ({ label: row.category.name, value: row.spent, colour: CATEGORY_COLOURS[row.category.id] || '#888' }));
@@ -74,12 +99,21 @@ export function dashboardView(state, s) {
         `<li><span class="dot" style="background:${slice.colour}"></span>${escapeHtml(slice.label)}<span class="legend-amount">${formatAbsCents(slice.value)}</span></li>`,
     )
     .join('');
-  const recent = s.recent
+  return `<article class="card">
+      <h2>Where the spending went</h2>
+      <div class="donut-wrap">${donutChart(slices, s.spentTotal, 'spent')}<ul class="legend">${legend}</ul></div>
+      <p class="note">Needs and wants only — savings transfers are not spending.</p>
+    </article>`;
+}
+
+// Envelopes running low, then the recurring bills with their due days.
+function envelopesCard(state, s) {
+  const low = s.lowEnvelopes.length === 0 ? '<p>Every envelope still has room.</p>' : `<ul class="envelopes">${s.lowEnvelopes
     .map(
-      (t) =>
-        `<li><span class="tx-date">${monthDay(t.date)}</span><span class="tx-desc">${escapeHtml(t.description)}</span><span class="tx-amount ${t.amountCents < 0 ? 'out' : 'in'}">${t.amountCents < 0 ? '−' : '+'}${formatAbsCents(t.amountCents)}</span></li>`,
+      (row) =>
+        `<li><span class="dot" style="background:${CATEGORY_COLOURS[row.category.id] || '#888'}"></span><span>${escapeHtml(row.category.name)}</span><span class="envelope-remaining ${row.remaining < 0 ? 'negative' : ''}">${row.remaining < 0 ? '−' : ''}${formatAbsCents(row.remaining)} left</span></li>`,
     )
-    .join('');
+    .join('')}</ul>`;
   const bills = state.categories
     .filter((c) => c.fixed)
     .map(
@@ -87,52 +121,58 @@ export function dashboardView(state, s) {
         `<li><span class="bill-name">${escapeHtml(c.name)}</span><span class="bill-day">day ${c.dueDay}</span><span class="bill-amount">${formatCents(c.budgetCents)}</span></li>`,
     )
     .join('');
+  return `<article class="card">
+      <h2>Envelopes running low</h2>
+      ${low}
+      <h2 class="subhead">Recurring bills</h2>
+      <ul class="bills">${bills}</ul>
+    </article>`;
+}
+
+// The eight most recent transactions, newest first.
+function recentTransactionsCard(s) {
+  const recent = s.recent
+    .map(
+      (t) =>
+        `<li><span class="tx-date">${monthDay(t.date)}</span><span class="tx-desc">${escapeHtml(t.description)}</span><span class="tx-amount ${t.amountCents < 0 ? 'out' : 'in'}">${t.amountCents < 0 ? '−' : '+'}${formatAbsCents(t.amountCents)}</span></li>`,
+    )
+    .join('');
+  return `<article class="card">
+      <h2>Recent transactions</h2>
+      <ul class="tx-list">${recent}</ul>
+      <p><a href="#/transactions">All transactions &rarr;</a></p>
+    </article>`;
+}
+
+// The savings goals in miniature: name, percentage, a bar and the balance.
+function goalsMiniCard(s) {
   const goals = s.goals
     .map(
       (g) =>
         `<li class="goal-mini"><div class="goal-mini-head"><span>${escapeHtml(g.goal.name)}</span><span>${Math.round(g.pct * 100)}%</span></div>${goalBar(g.pct)}<div class="goal-mini-sub">${formatCents(g.goal.savedCents)} of ${formatCents(g.goal.targetCents)}${g.monthsLeft === 0 ? ' — reached' : ` · about ${g.monthsLeft} months left`}</div></li>`,
     )
     .join('');
+  return `<article class="card">
+      <h2>Savings goals</h2>
+      <ul class="goals-mini">${goals}</ul>
+      <p><a href="#/goals">All goals &rarr;</a></p>
+    </article>`;
+}
+
+export function dashboardView(state, s) {
   return `<section class="hero">
     <p class="eyebrow">${escapeHtml(state.household.month)} · ${escapeHtml(state.household.name)}</p>
     <h1>Your money, assigned before it is spent.</h1>
     <p class="lede">Hearth &amp; Ledger is a household budget that runs entirely in your browser. Income in, every dollar given a job, savings moved first — and nothing leaves this device.</p>
   </section>
-  <section class="cards" aria-label="This month at a glance">
-    <article class="card stat"><h2>Income</h2><p class="big">${formatCents(s.income)}</p><p class="sub">After tax, this month</p></article>
-    <article class="card stat"><h2>Spent</h2><p class="big">${formatAbsCents(s.spentTotal)}</p><p class="sub"><span class="sub-line">Needs ${formatAbsCents(s.spentNeeds)}</span><span class="sub-line">Wants ${formatAbsCents(s.spentWants)}</span></p></article>
-    <article class="card stat"><h2>Saved</h2><p class="big">${formatAbsCents(s.saved)}</p><p class="sub">${formatAbsCents(s.saved)} moved to savings</p></article>
-    <article class="card stat highlight"><h2>Ready to assign</h2><p class="big">${formatCents(s.unassigned)}</p><p class="sub">${s.unassigned > 0 ? 'Give every dollar a job — see the budget' : 'Every dollar has a job'}</p><p><a class="button" href="#/budget">Open the budget</a></p></article>
+  ${statCards(s)}
+  <section class="grid-two">
+    ${spendingCard(s)}
+    ${envelopesCard(state, s)}
   </section>
   <section class="grid-two">
-    <article class="card">
-      <h2>Where the spending went</h2>
-      <div class="donut-wrap">${donutChart(slices, s.spentTotal, 'spent')}<ul class="legend">${legend}</ul></div>
-      <p class="note">Needs and wants only — savings transfers are not spending.</p>
-    </article>
-    <article class="card">
-      <h2>Envelopes running low</h2>
-      ${s.lowEnvelopes.length === 0 ? '<p>Every envelope still has room.</p>' : `<ul class="envelopes">${s.lowEnvelopes
-        .map(
-          (row) =>
-            `<li><span class="dot" style="background:${CATEGORY_COLOURS[row.category.id] || '#888'}"></span><span>${escapeHtml(row.category.name)}</span><span class="envelope-remaining ${row.remaining < 0 ? 'negative' : ''}">${row.remaining < 0 ? '−' : ''}${formatAbsCents(row.remaining)} left</span></li>`,
-        )
-        .join('')}</ul>`}
-      <h2 class="subhead">Recurring bills</h2>
-      <ul class="bills">${bills}</ul>
-    </article>
-  </section>
-  <section class="grid-two">
-    <article class="card">
-      <h2>Recent transactions</h2>
-      <ul class="tx-list">${recent}</ul>
-      <p><a href="#/transactions">All transactions &rarr;</a></p>
-    </article>
-    <article class="card">
-      <h2>Savings goals</h2>
-      <ul class="goals-mini">${goals}</ul>
-      <p><a href="#/goals">All goals &rarr;</a></p>
-    </article>
+    ${recentTransactionsCard(s)}
+    ${goalsMiniCard(s)}
   </section>`;
 }
 
@@ -200,7 +240,8 @@ export function transactionsView(state, s, ui = {}) {
   </section>
   <section class="card">
     <h2>Add a transaction</h2>
-    <form data-action="add-transaction" class="form-grid">
+    <form data-action="add-transaction" id="tx-form" class="form-grid">
+      <input type="hidden" name="editId" value="">
       <label>Date <input type="date" name="date" value="2026-11-25" required></label>
       <label>Description <input type="text" name="description" maxlength="80" placeholder="e.g. Supermarket — weekly shop" required></label>
       <label>Category <select name="categoryId">${options}</select></label>
@@ -209,8 +250,9 @@ export function transactionsView(state, s, ui = {}) {
         <label><input type="radio" name="direction" value="out" checked> Money out</label>
         <label><input type="radio" name="direction" value="in"> Money in</label>
       </fieldset>
-      <p class="form-note">Money out of a savings category counts as a transfer to savings, not spending.</p>
-      <button class="button" type="submit">Add transaction</button>
+      <p class="form-note">Money out of a savings category counts as a transfer to savings, not spending. To fix a row you already added, press its Edit button — the form fills in with its values.</p>
+      <p class="form-actions"><button class="button" type="submit" id="tx-submit">Add transaction</button><button class="button secondary" type="button" data-action="cancel-edit" id="tx-cancel-edit" hidden>Cancel edit</button></p>
+      <p class="form-error" id="tx-form-error" role="alert" hidden></p>
     </form>
   </section>
   <section class="card">
@@ -333,19 +375,33 @@ export function plannerView(state, s) {
   </section>`;
 }
 
-export function guideView() {
-  const sections = GUIDE_SECTIONS.map(
-    (section) => `<article class="card guide-section" id="${section.id}">
+// One guide section, with its source line, its paragraphs, and — when the
+// section carries figures that read better in columns — its table.
+function guideSection(section) {
+  const table = section.table
+    ? `<table class="guide-table">
+      <thead><tr>${section.table.headers.map((h, i) => (i === section.table.headers.length - 1 ? `<th class="num">${escapeHtml(h)}</th>` : `<th>${escapeHtml(h)}</th>`)).join('')}</tr></thead>
+      <tbody>${section.table.rows.map((row) => `<tr>${row.map((cell, i) => (i === row.length - 1 ? `<td class="num">${escapeHtml(cell)}</td>` : `<td>${escapeHtml(cell)}</td>`)).join('')}</tr>`).join('')}</tbody>
+    </table>`
+    : '';
+  return `<article class="card guide-section" id="${section.id}">
       <h2>${escapeHtml(section.title)}</h2>
       <p class="guide-source">Source: ${escapeHtml(section.source)}</p>
       ${section.body.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join('')}
-    </article>`,
-  ).join('');
+      ${table}
+    </article>`;
+}
+
+export function guideView() {
+  const sections = GUIDE_SECTIONS.map(guideSection).join('');
+  // The index links carry data-scroll-to instead of pointing at a route:
+  // "#/guide-fifty-thirty-twenty" is not a page, so a plain link would land
+  // on the not-found page. main.js scrolls to the section on the guide page.
   const index = GUIDE_SECTIONS.map(
-    (section) => `<li><a href="#/guide-${section.id}">${escapeHtml(section.title)}</a></li>`,
+    (section) => `<li><a href="#/guide" data-scroll-to="${section.id}">${escapeHtml(section.title)}</a></li>`,
   ).join('');
   return `<h1>How to budget</h1>
-  <p class="lede">Five methods, in plain language, with the numbers they actually use. Nothing here is invented: each one names its source, and the planner on this site runs the same arithmetic.</p>
+  <p class="lede">Seven methods, in plain language, with the numbers they actually use. Nothing here is invented: each one names its source, and the planner on this site runs the same arithmetic.</p>
   <nav class="guide-index" aria-label="Guide contents"><ul>${index}</ul></nav>
   ${sections}`;
 }
